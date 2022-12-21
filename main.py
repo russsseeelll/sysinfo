@@ -7,6 +7,7 @@ import psutil
 import sys
 import pyodbc
 
+
 # get the MAC address
 def get_mac_address():
     mac_address = None
@@ -16,6 +17,7 @@ def get_mac_address():
         pass
     return mac_address
 
+
 # format mac address
 def format_mac_address(mac_address):
     formatted_mac_address = re.sub(r"(..)", r"\1:", mac_address)
@@ -23,7 +25,8 @@ def format_mac_address(mac_address):
     formatted_mac_address = formatted_mac_address[:-1]
     return formatted_mac_address
 
- # get the hostname
+
+# get the hostname
 def get_hostname():
     hostname = None
     try:
@@ -32,13 +35,15 @@ def get_hostname():
         pass
     return hostname
 
- # get the current logged in username
+
+# get the current logged-in username
 def get_current_username():
     username = None
     username = os.getlogin()
     return username
 
- # get the CPU information
+
+# get the CPU information
 def get_cpu_info():
     cpu_info = None
     try:
@@ -107,6 +112,7 @@ def get_cpu_info():
         pass
     return cpu_info
 
+
 # get the GPU information
 def get_gpu_info():
     gpu_info = None
@@ -151,7 +157,7 @@ def get_ram_info():
         output = subprocess.check_output(cmd).decode().strip()
         match = re.search(r"Capacity\s*\r+\n+(.*)", output)
         if match:
-            total_ram = int(match.group(1)) / (1024**3)
+            total_ram = int(match.group(1)) / (1024 ** 3)
         else:
             total_ram = "Unknown"
 
@@ -159,6 +165,7 @@ def get_ram_info():
     except Exception:
         pass
     return ram_info
+
 
 # get the service tag of the system
 def get_service_tag():
@@ -174,6 +181,8 @@ def get_service_tag():
     except Exception:
         pass
     return service_tag
+
+
 # get the HDD information
 def get_hdd_info():
     hdd_info = []
@@ -187,9 +196,9 @@ def get_hdd_info():
             usage = psutil.disk_usage(partition.mountpoint)
 
             # Format the storage space information
-            total_space = usage.total / (1024**3)
-            used_space = usage.used / (1024**3)
-            free_space = usage.free / (1024**3)
+            total_space = usage.total / (1024 ** 3)
+            used_space = usage.used / (1024 ** 3)
+            free_space = usage.free / (1024 ** 3)
             hdd = f"{partition.device}: {used_space:.2f} GB / {total_space:.2f} GB ({free_space:.2f} GB free)"
 
             # Add the HDD information to the list
@@ -202,6 +211,7 @@ def get_hdd_info():
     hdd_str = "\n".join(hdd_info)
     return hdd_str
 
+
 # Sets
 mac_address = get_mac_address()
 formatted_mac_address = format_mac_address(mac_address)
@@ -213,27 +223,38 @@ gpu_info = get_gpu_info()
 ram_info = get_ram_info()
 hdd_info = get_hdd_info()
 
-# find the OS, set the folder path
-sys = platform.system()
-if sys == 'Windows':
-    folder_path = r"C:\sysinfo"
-elif sys == 'Linux':
-    folder_path = r"/sysinfo"
-elif sys == 'Darwin':  # Mac OS
-    folder_path = r"/sysinfo"
+# Connect to the database
+conn = pyodbc.connect(
+    "DRIVER={MySQL ODBC 8.0 ANSI Driver};"
+    "SERVER=localhost;"
+    "DATABASE=sysinfo;"
+    "UID=root;"
+    "PWD="
+)
 
-# create new folder incase one does not exist
-if not os.path.exists(folder_path):
-    os.makedirs(folder_path)
+cursor = conn.cursor()
 
-# write the sets to the file
-file_path = os.path.join(folder_path, 'output.txt')
-with open(file_path, "w") as file:
-    file.write(f"MAC address: {formatted_mac_address}\n")
-    file.write(f"Hostname: {hostname}\n")
-    file.write(f"Username: {username}\n")
-    file.write(f"Service tag: {service_tag}\n")
-    file.write(f"CPU: {cpu_info}\n")
-    file.write(f"GPU: {gpu_info}\n")
-    file.write(f"RAM: {ram_info}\n")
-    file.write(f"HDD: {hdd_info}")
+# Check if the MAC address already exists in the table
+query = "SELECT * FROM sysinfo WHERE mac_address = ?"
+cursor.execute(query, (mac_address,))
+row = cursor.fetchone()
+
+if row:
+    # MAC address exists, update the record
+    query = "UPDATE sysinfo SET hostname = ?, username = ?, " \
+            "cpu_info = ?, gpu_info = ?, ram_info = ?, hdd_info = ? WHERE mac_address = ?"
+    cursor.execute(query, (hostname, username, cpu_info, gpu_info, ram_info, hdd_info, mac_address))
+    conn.commit()
+else:
+    # MAC address does not exist, insert a new record
+    query = "INSERT INTO sysinfo (mac_address, hostname, username, service_tag, " \
+            "cpu_info, gpu_info, ram_info, hdd_info) " \
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    cursor.execute(query, (mac_address, hostname, username, service_tag, cpu_info, gpu_info, ram_info, hdd_info))
+conn.commit()
+
+
+# Close the cursor and connection
+cursor.close()
+conn.close()
+
